@@ -1,0 +1,105 @@
+global:
+  checkNewVersion: true
+  sendAnonymousUsage: false
+
+serversTransport:
+  insecureSkipVerify: true
+
+entryPoints:
+  # Not used in apps, but redirect everything from HTTP to HTTPS
+  webnonsec:
+    address: :80
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+    forwardedHeaders:
+      trustedIPs: &trustedIps
+        # Start of Clouflare public IP list for HTTP requests, remove this if you don't use it
+        - 173.245.48.0/20
+        - 103.21.244.0/22
+        - 103.22.200.0/22
+        - 103.31.4.0/22
+        - 141.101.64.0/18
+        - 108.162.192.0/18
+        - 190.93.240.0/20
+        - 188.114.96.0/20
+        - 197.234.240.0/22
+        - 198.41.128.0/17
+        - 162.158.0.0/15
+        - 104.16.0.0/12
+        - 172.64.0.0/13
+        - 131.0.72.0/22
+        - 2400:cb00::/32
+        - 2606:4700::/32
+        - 2803:f800::/32
+        - 2405:b500::/32
+        - 2405:8100::/32
+        - 2a06:98c0::/29
+        - 2c0f:f248::/32
+        # End of Cloudlare public IP list
+
+  # HTTPS endpoint, with domain wildcard
+  websecure:
+    address: :443
+    http:
+      tls:
+        # Generate a wildcard domain certificate
+        certResolver: letsencrypt
+        domains:
+          - main: "redacted.net"
+            sans:
+              - "*.redacted.net"
+      middlewares:
+        - securityHeaders@file
+    forwardedHeaders:
+      # Reuse list of Cloudflare Trusted IP's above for HTTPS requests
+      trustedIPs: *trustedIps
+
+providers:
+  providersThrottleDuration: 2s
+  # File provider for connecting things that are outside of docker / defining middleware
+  file:
+    filename: /etc/traefik/traefik-dynamic.yml
+    # directory: /etc/traefik/dynamic
+    watch: true
+
+  # Docker provider for connecting all apps that are inside of the docker network
+  docker:
+    watch: true
+    network: reverse_proxy # Add Your Docker Network Name Here
+    # Default host rule to containername.domain.example
+    # defaultRule: "Host(`{{ index .Labels \"com.docker.compose.service\"}}.home.redacted.net`)"
+    # defaultRule: "(Host(`home.redacted.net`) && PathPrefix(`/{{ index .Labels \"com.docker.compose.service\"}}`))"
+    swarmModeRefreshSeconds: 15s
+    exposedByDefault: false
+
+api:
+  dashboard: true # Enable traefik ui
+  insecure: true
+
+log:
+  level: ERROR #DEBUG # INFO|DEBUG|ERROR
+  filePath: "/etc/traefik/logs/traefik.log"
+
+accessLog:
+  filePath: "/etc/traefik/logs/access.log"
+
+
+# Use letsencrypt to generate ssl serficiates
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: "redacted@redacted"
+      storage: "/etc/certs/acme.json"
+      # Alternative ACME Staging CA Server (not ratelimited like prod):
+      # comment out caserver line when done testing, also clear out /etc/certs/acme.json
+      caServer: "https://acme-staging-v02.api.letsencrypt.org/directory"
+      dnsChallenge:
+        provider: cloudflare
+        # provider: duckdns
+        delayBeforeCheck: "5"
+        resolvers:
+          - "9.9.9.9:53"
+          - "1.1.1.1:53"

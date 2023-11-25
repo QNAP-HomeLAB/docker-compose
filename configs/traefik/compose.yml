@@ -1,0 +1,55 @@
+# 'traefik' docker config file created for a homelab environment - https://github.com/qnap-homelab
+
+## use these example labels in each container compose that you want to route using traefik
+## replace <appname> with your app name, and <port> with your apps webui access port
+    # labels:
+    #   traefik.enable: "true"
+    #   traefik.http.routers.<appname>.tls: "true"
+    #   traefik.http.routers.<appname>.entrypoints: websecure
+    #   traefik.http.routers.<appname>.rule: Host(`<appname>.${var_domain1}`)
+    #   traefik.http.services.<appname>.loadbalancer.server.port: <port>
+
+## ensure you have created the secret 'cloudflare_domain1-dns_token.secret' in the secrets folder
+## ensure the custom docker network 'reverse_proxy' is created
+
+version: '3'
+
+secrets:
+  cloudflare_dns_api_token:
+    file: ${docker_secrets}/cloudflare_domain1-dns_token.secret
+
+networks:
+  reverse_proxy:
+    external: true
+
+services:
+  traefik:
+    container_name: traefik
+    image: traefik:saintmarcelin # v2.10 with security updates
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - reverse_proxy # rename this to your custom docker network
+    ports:
+      - 33080:80
+      - 33443:443
+      - 33880:8080 # Dashboard port
+    volumes:
+      - /share/docker/appdata/traefik/:/etc/traefik/
+      - /share/docker/appdata/traefik/certs/:/etc/certs/
+      - /var/run/docker.sock:/var/run/docker.sock # remove or comment this out if using docker-socket-proxy
+    secrets:
+      - cloudflare_dns_api_token
+    environment:
+      CF_DNS_API_TOKEN: /run/secrets/cloudflare_dns_api_token
+    command:
+      - "--configFile=/etc/traefik/traefik-static.yml"
+      - "--log.filePath=/etc/traefik/traefik-logs.yml"
+    labels:
+      traefik.enable: "true" # Enable Traefik reverse proxy for the Traefik dashboard.
+      traefik.docker.network: "reverse_proxy"
+      traefik.http.routers.api.entryPoints: websecure # Set the Traefik entry point.
+      traefik.http.routers.api.service: api@internal  # Enable Traefik API.
+      traefik.http.routers.api.rule: "Host(`traefik.${var_domain1}`)"
+      traefik.http.services.api.loadbalancer.server.port: 8080
